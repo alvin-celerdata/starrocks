@@ -14,10 +14,11 @@
 
 #include "column/datum_convert.h"
 
+#include <cstring>
+
 #include "gutil/strings/substitute.h"
 #include "runtime/mem_pool.h"
 #include "storage/olap_type_infra.h"
-#include "types/logical_type.h"
 #include "types/type_traits.h"
 
 namespace starrocks {
@@ -78,34 +79,4 @@ Status datum_from_string(TypeInfo* type_info, Datum* dst, const std::string& str
 
     return Status::OK();
 }
-
-template <LogicalType TYPE>
-std::string datum_to_string(TypeInfo* type_info, const Datum& datum) {
-    using CppType = typename CppTypeTraits<TYPE>::CppType;
-    auto value = datum.template get<CppType>();
-    return type_info->to_string(&value);
-}
-
-std::string datum_to_string(TypeInfo* type_info, const Datum& datum) {
-    if (datum.is_null()) {
-        return "null";
-    }
-    const auto type = type_info->type();
-    switch (type) {
-    case TYPE_BOOLEAN:
-        return datum_to_string<TYPE_TINYINT>(type_info, datum);
-    case TYPE_VARBINARY:
-    case TYPE_CHAR:
-    case TYPE_VARCHAR:
-        return datum_to_string<TYPE_VARCHAR>(type_info, datum);
-#define M(type) \
-    case type:  \
-        return datum_to_string<type>(type_info, datum);
-        APPLY_FOR_TYPE_CONVERT_TO_VARCHAR(M)
-#undef M
-    default:
-        return "";
-    }
-}
-
 } // namespace starrocks

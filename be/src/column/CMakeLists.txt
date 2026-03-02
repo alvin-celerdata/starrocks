@@ -38,6 +38,7 @@ ADD_BE_LIB(ColumnCore
         json_column.cpp
         adaptive_nullable_column.cpp
         column_helper.cpp
+        datum_to_string.cpp
         type_traits.cpp
         column_viewer.cpp
         column_view/column_view_base.cpp

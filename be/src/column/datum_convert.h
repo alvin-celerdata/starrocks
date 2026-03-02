@@ -14,12 +14,17 @@
 
 #pragma once
 
-#include "storage/types.h"
+#include "common/statusor.h"
 #include "types/datum.h"
+#include "types/type_info.h"
 
 namespace starrocks {
 
+class MemPool;
+
 Status datum_from_string(TypeInfo* type_info, Datum* dst, const std::string& str, MemPool* mem_pool);
+
+StatusOr<std::string> datum_to_string_checked(TypeInfo* type_info, const Datum& datum);
 
 std::string datum_to_string(TypeInfo* type_info, const Datum& datum);
 
