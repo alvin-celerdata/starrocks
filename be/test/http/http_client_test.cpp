@@ -21,6 +21,7 @@
 
 #include "base/testutil/assert.h"
 #include "boost/algorithm/string.hpp"
+#include "common/config_ingest_fwd.h"
 #include "common/config_storage_fwd.h"
 #include "common/logging.h"
 #include "http/ev_http_server.h"
@@ -28,6 +29,7 @@
 #include "http/http_channel.h"
 #include "http/http_handler.h"
 #include "http/http_request.h"
+#include "http/http_status.h"
 
 namespace starrocks {
 
@@ -98,10 +100,16 @@ public:
     }
 };
 
+class HttpClientTestNotFoundHandler : public HttpHandler {
+public:
+    void handle(HttpRequest* req) override { HttpChannel::send_reply(req, HttpStatus::NOT_FOUND, "Not Found"); }
+};
+
 static HttpClientTestSimpleGetHandler s_simple_get_handler = HttpClientTestSimpleGetHandler();
 static HttpClientTestSimplePostHandler s_simple_post_handler = HttpClientTestSimplePostHandler();
 static HttpClientTestHeaderHandler s_header_handler = HttpClientTestHeaderHandler();
 static HttpClientTestMultiHeaderHandler s_multi_header_handler = HttpClientTestMultiHeaderHandler();
+static HttpClientTestNotFoundHandler s_not_found_handler = HttpClientTestNotFoundHandler();
 
 static EvHttpServer* s_server = nullptr;
 static int real_port = 0;
@@ -113,10 +121,12 @@ public:
     ~HttpClientTest() override = default;
 
     static void SetUpTestCase() {
+        config::streaming_load_max_mb = 1;
         s_server = new EvHttpServer(0);
         s_server->register_handler(GET, "/simple_get", &s_simple_get_handler);
         s_server->register_handler(HEAD, "/simple_get", &s_simple_get_handler);
         s_server->register_handler(POST, "/simple_post", &s_simple_post_handler);
+        s_server->register_handler(POST, "/simple_pos", &s_not_found_handler);
         s_server->register_handler(GET, "/header_test", &s_header_handler);
         s_server->register_handler(GET, "/multi_header_test", &s_multi_header_handler);
         ASSERT_OK(s_server->start());

@@ -91,6 +91,7 @@
         "be/src/http/http_method.*",
         "be/src/http/http_status.*",
         "be/src/http/http_headers.*",
+        "be/src/http/http_client.*",
         "be/src/http/http_request.*",
         "be/src/http/http_response.*",
         "be/src/http/http_parser.*",
@@ -98,7 +99,7 @@
         "be/src/http/http_stream_channel.*",
         "be/src/http/ev_http_server.*"
       ],
-      "allowed_include_prefixes": ["http/", "common/", "base/", "gutil/", "gen_cpp/"],
+      "allowed_include_prefixes": ["http/", "fs/", "common/", "base/", "gutil/", "gen_cpp/"],
       "forbidden_include_prefixes": ["http/action/"],
       "forbidden_includes": [
         "http/default_path_handlers.h",
@@ -108,10 +109,10 @@
         "http/utils.h",
         "http/web_page_handler.h"
       ],
-      "allowed_target_deps": ["Common", "Base", "Gutil"],
+      "allowed_target_deps": ["FSCore", "Common", "Base", "Gutil"],
       "allowed_test_targets": ["http_core_test"],
-      "allowed_test_link_deps": ["HttpCore", "Common", "Base", "Gutil", "StarRocksGen"],
-      "remediation": "Keep HttpCore limited to reusable HTTP transport and request primitives; move BE-specific pages, actions, auth helpers, and client/download helpers upward."
+      "allowed_test_link_deps": ["HttpCore", "FSCore", "Common", "Base", "Gutil", "StarRocksGen"],
+      "remediation": "Keep HttpCore limited to reusable HTTP transport, client, and request primitives; move BE-specific pages, actions, auth helpers, and non-core download helpers upward."
     },
     {
       "id": "iocore",

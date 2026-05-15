@@ -113,10 +113,10 @@ Cache implementation module for DataCache facade, cache engines, monitors, metri
 ### HttpCore (`httpcore`)
 Reusable HTTP transport and request primitives above Common without BE admin or page-handler code.
 - Targets: `HttpCore`
-- Allowed internal include prefixes: `http/`, `common/`, `base/`, `gutil/`, `gen_cpp/`
-- Allowed target deps: `Common`, `Base`, `Gutil`
+- Allowed internal include prefixes: `http/`, `fs/`, `common/`, `base/`, `gutil/`, `gen_cpp/`
+- Allowed target deps: `FSCore`, `Common`, `Base`, `Gutil`
 - Core tests: `http_core_test`
-- Remediation: Keep HttpCore limited to reusable HTTP transport and request primitives; move BE-specific pages, actions, auth helpers, and client/download helpers upward.
+- Remediation: Keep HttpCore limited to reusable HTTP transport, client, and request primitives; move BE-specific pages, actions, auth helpers, and non-core download helpers upward.
 
 ### IOCore (`iocore`)
 Minimal IO foundation used by upper IO/FS layers.
