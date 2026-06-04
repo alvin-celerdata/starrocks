@@ -14,7 +14,7 @@
 
 #include "exec/pipeline/schedule/event_scheduler.h"
 
-#include "exec/pipeline/fragment_context.h"
+#include "exec/pipeline/fragment_driver_context.h"
 #include "exec/pipeline/pipeline_driver.h"
 #include "exec/pipeline/pipeline_fwd.h"
 #include "exec/pipeline/primitives/driver_queue.h"
@@ -22,12 +22,13 @@
 #include "exec/pipeline/query_context.h"
 #include "exec/pipeline/schedule/common.h"
 #include "exec/pipeline/schedule/utils.h"
+#include "runtime/runtime_state.h"
 
 namespace starrocks::pipeline {
 
 void EventScheduler::add_blocked_driver(const DriverRawPtr driver) {
     // Capture query-context is needed before calling reschedule to avoid UAF
-    auto query_ctx = driver->fragment_ctx()->runtime_state()->query_ctx()->shared_from_this();
+    auto query_ctx = driver->driver_context()->runtime_state()->query_ctx()->shared_from_this();
     SCHEDULE_CHECK(!driver->is_in_blocked());
     driver->set_in_blocked(true);
     TRACE_SCHEDULE_LOG << "TRACE add to block queue:" << driver << "," << driver->to_readable_string();
@@ -46,14 +47,14 @@ void EventScheduler::try_schedule(const DriverRawPtr driver) {
     RACE_DETECT(driver->schedule);
 
     // The logic in the pipeline poller is basically the same.
-    auto fragment_ctx = driver->fragment_ctx();
-    if (fragment_ctx->is_canceled() && !driver->is_operator_cancelled()) {
+    auto driver_ctx = driver->driver_context();
+    if (driver_ctx->is_canceled() && !driver->is_operator_cancelled()) {
         add_to_ready_queue = true;
     } else if (driver->need_report_exec_state()) {
         add_to_ready_queue = true;
     } else if (driver->pending_finish()) {
         if (!driver->is_still_pending_finish()) {
-            driver->set_driver_state(fragment_ctx->is_canceled() ? DriverState::CANCELED : DriverState::FINISH);
+            driver->set_driver_state(driver_ctx->is_canceled() ? DriverState::CANCELED : DriverState::FINISH);
             add_to_ready_queue = true;
         }
     } else if (driver->is_finished()) {

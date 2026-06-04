@@ -29,6 +29,7 @@
 #include "compute_env/workgroup/work_group_fwd.h"
 #include "exec/exec_node.h"
 #include "exec/pipeline/adaptive/adaptive_dop_param.h"
+#include "exec/pipeline/fragment_driver_context.h"
 #include "exec/pipeline/group_execution/execution_group_fwd.h"
 #include "exec/pipeline/pipeline_fwd.h"
 #include "exec/pipeline/runtime_filter_hub.h"
@@ -75,13 +76,19 @@ public:
     const TUniqueId& fragment_instance_id() const { return _fragment_instance_id; }
     void set_fragment_instance_id(const TUniqueId& fragment_instance_id) {
         _fragment_instance_id = fragment_instance_id;
+        _driver_context.set_fragment_instance_id(fragment_instance_id);
     }
     void set_fe_addr(const TNetworkAddress& fe_addr) { _fe_addr = fe_addr; }
     const TNetworkAddress& fe_addr() { return _fe_addr; }
     FragmentFuture finish_future() { return _finish_promise.get_future(); }
     RuntimeState* runtime_state() const { return _runtime_state.get(); }
     std::shared_ptr<RuntimeState> runtime_state_ptr() { return _runtime_state; }
-    void set_runtime_state(std::shared_ptr<RuntimeState>&& runtime_state) { _runtime_state = std::move(runtime_state); }
+    void set_runtime_state(std::shared_ptr<RuntimeState>&& runtime_state) {
+        _runtime_state = std::move(runtime_state);
+        _driver_context.set_runtime_state(_runtime_state);
+    }
+    FragmentDriverContext* driver_context() { return &_driver_context; }
+    const FragmentDriverContext* driver_context() const { return &_driver_context; }
     FragmentDictState* dict_state() const { return _fragment_dict_state.get(); }
     ExecNode*& plan() { return _plan; }
 
@@ -121,7 +128,7 @@ public:
     void clear_all_drivers();
     void close_all_execution_groups();
 
-    RuntimeFilterHub* runtime_filter_hub() { return &_runtime_filter_hub; }
+    RuntimeFilterHub* runtime_filter_hub() { return _driver_context.runtime_filter_hub(); }
 
     RuntimeFilterPort* runtime_filter_port() { return _runtime_state->runtime_filter_port(); }
 
@@ -134,9 +141,9 @@ public:
 
     query_cache::CacheParam& cache_param() { return _cache_param; }
 
-    void set_enable_cache(bool flag) { _enable_cache = flag; }
+    void set_enable_cache(bool flag) { _driver_context.set_enable_cache(flag); }
 
-    bool enable_cache() const { return _enable_cache; }
+    bool enable_cache() const { return _driver_context.enable_cache(); }
 
     void set_stream_load_contexts(const std::vector<StreamLoadContext*>& contexts);
 
@@ -147,16 +154,16 @@ public:
     const PredicateTreeParams& pred_tree_params() const { return _pred_tree_params; }
     void set_pred_tree_params(const PredicateTreeParams& params) { _pred_tree_params = params; }
 
-    size_t next_driver_id() { return _next_driver_id++; }
+    size_t next_driver_id() { return _driver_context.next_driver_id(); }
 
-    void set_workgroup(workgroup::WorkGroupPtr wg) { _workgroup = std::move(wg); }
-    const workgroup::WorkGroupPtr& workgroup() const { return _workgroup; }
-    bool enable_resource_group() const { return _workgroup != nullptr; }
+    void set_workgroup(workgroup::WorkGroupPtr wg) { _driver_context.set_workgroup(std::move(wg)); }
+    const workgroup::WorkGroupPtr& workgroup() const { return _driver_context.workgroup(); }
+    bool enable_resource_group() const { return _driver_context.enable_resource_group(); }
     TQueryType::type query_type() const;
 
-    size_t expired_log_count() { return _expired_log_count; }
+    size_t expired_log_count() const { return _driver_context.expired_log_count(); }
 
-    void set_expired_log_count(size_t val) { _expired_log_count = val; }
+    void set_expired_log_count(size_t val) { _driver_context.set_expired_log_count(val); }
 
     void init_jit_profile();
 
@@ -176,13 +183,15 @@ public:
     // acquire runtime filter from cache
     void acquire_runtime_filters();
 
-    bool enable_event_scheduler() const { return event_scheduler() != nullptr; }
-    EventScheduler* event_scheduler() const { return _event_scheduler.get(); }
-    void init_event_scheduler();
+    bool enable_event_scheduler() const { return _driver_context.enable_event_scheduler(); }
+    EventScheduler* event_scheduler() const { return _driver_context.event_scheduler(); }
+    void init_event_scheduler() { _driver_context.init_event_scheduler(); }
 
-    PipelineTimer* pipeline_timer() { return _pipeline_timer; }
-    void add_timer_observer(PipelineObserver* observer, uint64_t timeout);
-    Status submit_all_timer();
+    PipelineTimer* pipeline_timer() { return _driver_context.pipeline_timer(); }
+    void add_timer_observer(PipelineObserver* observer, uint64_t timeout) {
+        _driver_context.add_timer_observer(observer, timeout);
+    }
+    Status submit_all_timer() { return _driver_context.submit_all_timer(); }
 
 private:
     void _set_default_workgroup();
@@ -206,23 +215,14 @@ private:
     // never adjust the order of _runtime_state, _plan, _pipelines and _drivers, since
     // _plan depends on _runtime_state and _drivers depends on _runtime_state.
     std::shared_ptr<RuntimeState> _runtime_state = nullptr;
+    FragmentDriverContext _driver_context;
     std::unique_ptr<FragmentDictState> _fragment_dict_state;
     ExecNode* _plan = nullptr; // lives in _runtime_state->obj_pool()
-    size_t _next_driver_id = 0;
     Pipelines _pipelines;
     ExecutionGroups _execution_groups;
     std::atomic<size_t> _num_finished_execution_groups = 0;
 
-    std::unique_ptr<EventScheduler> _event_scheduler;
-    PipelineTimer* _pipeline_timer = nullptr;
-    std::shared_ptr<PipelineTimerTask> _timeout_task = nullptr;
-    std::shared_ptr<PipelineTimerTask> _report_state_task = nullptr;
-    std::unordered_map<uint64_t, std::shared_ptr<PipelineTimerTask>> _rf_timeout_tasks;
-
-    RuntimeFilterHub _runtime_filter_hub;
-
     MorselQueueFactoryMap _morsel_queue_factories;
-    workgroup::WorkGroupPtr _workgroup = nullptr;
 
     std::atomic<Status*> _final_status = nullptr;
     Status _s_status;
@@ -232,15 +232,12 @@ private:
     std::unique_ptr<PassThroughChunkBufferGuard> _pass_through_chunk_buffer_guard;
 
     query_cache::CacheParam _cache_param;
-    bool _enable_cache = false;
     std::vector<StreamLoadContext*> _stream_load_contexts;
 
     bool _enable_adaptive_dop = false;
     AdaptiveDopParam _adaptive_dop_param;
 
     PredicateTreeParams _pred_tree_params;
-
-    size_t _expired_log_count = 0;
 
     std::atomic<int64_t> _last_report_exec_state_ns = MonotonicNanos();
 

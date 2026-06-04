@@ -33,7 +33,7 @@
 #include "compute_env/spill/global_spill_manager.h"
 #include "compute_env/spill/operator_mem_resource_manager.h"
 #include "compute_env/workgroup/work_group.h"
-#include "exec/pipeline/fragment_context.h"
+#include "exec/pipeline/fragment_driver_context.h"
 #include "exec/pipeline/pipeline.h"
 #include "exec/pipeline/primitives/driver_observer.h"
 #include "exec/pipeline/primitives/event.h"
@@ -103,13 +103,13 @@ size_t spill_expected_reserved_bytes(QueryContext* query_ctx) {
 
 } // namespace
 
-PipelineDriver::PipelineDriver(const Operators& operators, QueryContext* query_ctx, FragmentContext* fragment_ctx,
+PipelineDriver::PipelineDriver(const Operators& operators, QueryContext* query_ctx, FragmentDriverContext* driver_ctx,
                                Pipeline* pipeline, DriverObserver* driver_observer, int32_t driver_id)
         : _observer(this),
           _operator_mem_resource_managers(operators.size()),
           _operators(operators),
           _query_ctx(query_ctx),
-          _fragment_ctx(fragment_ctx),
+          _driver_ctx(driver_ctx),
           _pipeline(pipeline),
           _driver_observer(driver_observer),
           _source_node_id(operators[0]->get_plan_node_id()),
@@ -123,7 +123,7 @@ PipelineDriver::PipelineDriver(const Operators& operators, QueryContext* query_c
 }
 
 PipelineDriver::PipelineDriver(const PipelineDriver& driver)
-        : PipelineDriver(driver._operators, driver._query_ctx, driver._fragment_ctx, driver._pipeline,
+        : PipelineDriver(driver._operators, driver._query_ctx, driver._driver_ctx, driver._pipeline,
                          driver._driver_observer, driver._driver_id) {}
 
 PipelineDriver::PipelineDriver()
@@ -131,7 +131,7 @@ PipelineDriver::PipelineDriver()
           _operator_mem_resource_managers(),
           _operators(),
           _query_ctx(nullptr),
-          _fragment_ctx(nullptr),
+          _driver_ctx(nullptr),
           _pipeline(nullptr),
           _driver_observer(nullptr),
           _source_node_id(0),
@@ -154,7 +154,7 @@ void PipelineDriver::check_operator_close_states(const std::string& func_name) {
             std::stringstream ss;
             ss << "query_id=" << (this->_query_ctx == nullptr ? "None" : print_id(this->query_ctx()->query_id()))
                << " fragment_id="
-               << (this->_fragment_ctx == nullptr ? "None" : print_id(this->fragment_ctx()->fragment_instance_id()));
+               << (this->_driver_ctx == nullptr ? "None" : print_id(this->driver_context()->fragment_instance_id()));
             auto msg = fmt::format(
                     "{} close operator {}-{} failed, may leak resources when {}, please report an issue at "
                     "https://github.com/StarRocks/starrocks/issues/new/choose.",
@@ -210,7 +210,7 @@ Status PipelineDriver::prepare(RuntimeState* runtime_state) {
     DCHECK(_state == DriverState::NOT_READY);
 
     auto* source_op = source_operator();
-    const auto use_cache = _fragment_ctx->enable_cache();
+    const auto use_cache = _driver_ctx->enable_cache();
 
     // attach ticket_checker to both ScanOperator and SplitMorselQueue
     auto* ticketed_morsel_queue = dynamic_cast<TicketedMorselQueue*>(_morsel_queue);
@@ -265,7 +265,7 @@ Status PipelineDriver::prepare(RuntimeState* runtime_state) {
         }
     }
     if (!_global_rf_descriptors.empty() && runtime_state->enable_event_scheduler()) {
-        _fragment_ctx->add_timer_observer(observer(), _global_rf_wait_timeout_ns);
+        _driver_ctx->add_timer_observer(observer(), _global_rf_wait_timeout_ns);
     }
 
     if (!all_local_rf_set.empty()) {
@@ -273,7 +273,7 @@ Status PipelineDriver::prepare(RuntimeState* runtime_state) {
     }
     size_t subscribe_filter_sequence = source_op->get_driver_sequence();
     _local_rf_holders =
-            fragment_ctx()->runtime_filter_hub()->gather_holders(all_local_rf_set, subscribe_filter_sequence);
+            driver_context()->runtime_filter_hub()->gather_holders(all_local_rf_set, subscribe_filter_sequence);
     for (auto rf_holder : _local_rf_holders) {
         rf_holder->add_observer(_runtime_state, &_observer);
     }
@@ -642,7 +642,7 @@ bool PipelineDriver::need_report_exec_state() {
         return false;
     }
 
-    return _fragment_ctx->need_report_exec_state();
+    return _driver_ctx->need_report_exec_state();
 }
 
 void PipelineDriver::report_exec_state_if_necessary() {
@@ -650,7 +650,7 @@ void PipelineDriver::report_exec_state_if_necessary() {
         return;
     }
 
-    _fragment_ctx->report_exec_state_if_necessary();
+    _driver_ctx->report_exec_state_if_necessary();
 }
 
 void PipelineDriver::runtime_report_action() {
@@ -664,7 +664,7 @@ void PipelineDriver::runtime_report_action() {
         COUNTER_SET(op->_total_timer, COUNTER_VALUE(op->_pull_timer) + COUNTER_VALUE(op->_push_timer) +
                                               COUNTER_VALUE(op->_finishing_timer) + COUNTER_VALUE(op->_finished_timer) +
                                               COUNTER_VALUE(op->_close_timer));
-        op->update_metrics(_fragment_ctx->runtime_state());
+        op->update_metrics(_driver_ctx->runtime_state());
     }
 }
 
@@ -880,7 +880,7 @@ void PipelineDriver::finalize(RuntimeState* runtime_state, DriverState state) {
     _update_driver_level_timer();
 
     if (_global_rf_timer != nullptr) {
-        _global_rf_timer->unschedule_and_join(_fragment_ctx->pipeline_timer());
+        _global_rf_timer->unschedule_and_join(_driver_ctx->pipeline_timer());
     }
 
     // Acquire the pointer to avoid be released when removing query
@@ -929,7 +929,7 @@ void PipelineDriver::_update_global_rf_timer() {
     timer->add_observer(_runtime_state, &_observer);
     _global_rf_timer = std::move(timer);
     timespec abstime = butil::nanoseconds_from_now(_global_rf_wait_timeout_ns);
-    WARN_IF_ERROR(_fragment_ctx->pipeline_timer()->schedule(_global_rf_timer.get(), abstime), "schedule:");
+    WARN_IF_ERROR(_driver_ctx->pipeline_timer()->schedule(_global_rf_timer.get(), abstime), "schedule:");
 }
 
 std::string PipelineDriver::_build_readable_string(bool use_raw_name) const {
@@ -940,7 +940,7 @@ std::string PipelineDriver::_build_readable_string(bool use_raw_name) const {
     }
     ss << "query_id=" << (this->_query_ctx == nullptr ? "None" : print_id(this->query_ctx()->query_id()))
        << " fragment_id="
-       << (this->_fragment_ctx == nullptr ? "None" : print_id(this->fragment_ctx()->fragment_instance_id()))
+       << (this->_driver_ctx == nullptr ? "None" : print_id(this->driver_context()->fragment_instance_id()))
        << " driver=" << _driver_name << " addr=" << this << ", status=" << ds_to_string(this->driver_state())
        << block_reasons << ", operator-chain: [";
     for (size_t i = 0; i < _operators.size(); ++i) {
@@ -979,14 +979,14 @@ void PipelineDriver::set_workgroup(workgroup::WorkGroupPtr wg) {
 }
 
 bool PipelineDriver::_check_fragment_is_canceled(RuntimeState* runtime_state) {
-    if (_fragment_ctx->is_canceled()) {
+    if (_driver_ctx->is_canceled()) {
         cancel_operators(runtime_state);
         // If the fragment is cancelled after the source operator commits an i/o task to i/o threads,
         // the driver cannot be finished immediately and should wait for the completion of the pending i/o task.
         if (is_still_pending_finish()) {
             set_driver_state(DriverState::PENDING_FINISH);
         } else {
-            set_driver_state(_fragment_ctx->final_status().ok() ? DriverState::FINISH : DriverState::CANCELED);
+            set_driver_state(_driver_ctx->final_status().ok() ? DriverState::FINISH : DriverState::CANCELED);
         }
 
         return true;
@@ -1052,7 +1052,7 @@ Status PipelineDriver::_mark_operator_cancelled(OperatorPtr& op, RuntimeState* s
 Status PipelineDriver::_mark_operator_closed(size_t operator_idx, OperatorPtr& op, RuntimeState* state) {
     auto msg = strings::Substitute("[Driver] close operator [driver=$0] [operator=$1]", to_readable_string(),
                                    op->get_name());
-    if (_fragment_ctx->is_canceled()) {
+    if (_driver_ctx->is_canceled()) {
         WARN_IF_ERROR(_mark_operator_cancelled(op, state), msg + " is failed to cancel");
     } else {
         WARN_IF_ERROR(_mark_operator_finished(op, state), msg + " is failed to finish");

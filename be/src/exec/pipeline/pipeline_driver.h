@@ -96,7 +96,7 @@ public:
     };
 
 public:
-    PipelineDriver(const Operators& operators, QueryContext* query_ctx, FragmentContext* fragment_ctx,
+    PipelineDriver(const Operators& operators, QueryContext* query_ctx, FragmentDriverContext* driver_ctx,
                    Pipeline* pipeline, DriverObserver* driver_observer, int32_t driver_id);
 
     PipelineDriver(const PipelineDriver& driver);
@@ -106,8 +106,8 @@ public:
 
     QueryContext* query_ctx() { return _query_ctx; }
     const QueryContext* query_ctx() const { return _query_ctx; }
-    FragmentContext* fragment_ctx() { return _fragment_ctx; }
-    const FragmentContext* fragment_ctx() const { return _fragment_ctx; }
+    FragmentDriverContext* driver_context() { return _driver_ctx; }
+    const FragmentDriverContext* driver_context() const { return _driver_ctx; }
     int32_t source_node_id() { return _source_node_id; }
     int32_t driver_id() const { return _driver_id; }
     DriverPtr clone() { return std::make_shared<PipelineDriver>(*this); }
@@ -465,7 +465,7 @@ protected:
 
     size_t _first_unfinished{0};
     QueryContext* _query_ctx;
-    FragmentContext* _fragment_ctx;
+    FragmentDriverContext* _driver_ctx;
     Pipeline* _pipeline;
     DriverObserver* _driver_observer;
     // The default value -1 means no source

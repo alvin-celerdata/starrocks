@@ -25,6 +25,7 @@
 #include "compute_env/workgroup/work_group.h"
 #include "compute_env/workgroup/work_group_manager.h"
 #include "exec/pipeline/fragment_context.h"
+#include "exec/pipeline/fragment_driver_context.h"
 #include "exec/pipeline/pipeline_driver.h"
 #include "exec/pipeline/primitives/driver_executor.h"
 #include "exec/pipeline/query_context.h"
@@ -146,9 +147,9 @@ void PipelineBlockingDriversAction::_handle_stat(HttpRequest* req) {
         auto iterate_func_generator = [](QueryMap& query_map) {
             return [&query_map](pipeline::DriverConstRawPtr driver) {
                 TUniqueId query_id = driver->query_ctx()->query_id();
-                TUniqueId fragment_id = driver->fragment_ctx()->fragment_instance_id();
-                bool is_cancelled = driver->fragment_ctx()->is_canceled();
-                std::string status = driver->fragment_ctx()->final_status().to_string();
+                TUniqueId fragment_id = driver->driver_context()->fragment_instance_id();
+                bool is_cancelled = driver->driver_context()->is_canceled();
+                std::string status = driver->driver_context()->final_status().to_string();
                 int32_t driver_id = driver->driver_id();
                 pipeline::DriverState state = driver->driver_state();
                 std::string driver_desc = driver->to_readable_string();

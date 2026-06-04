@@ -88,12 +88,28 @@ private:
     TUniqueId _query_id;
 };
 
-FragmentContext::FragmentContext() : _data_sink(nullptr), _fragment_dict_state(std::make_unique<FragmentDictState>()) {}
+FragmentContext::FragmentContext() : _data_sink(nullptr), _fragment_dict_state(std::make_unique<FragmentDictState>()) {
+    _driver_context.set_final_status_provider([this]() { return final_status(); });
+    _driver_context.set_cancel_handler(
+            [this](const Status& status, bool cancelled_by_fe) { cancel(status, cancelled_by_fe); });
+    _driver_context.set_need_report_provider([this]() { return need_report_exec_state(); });
+    _driver_context.set_report_handler([this]() { report_exec_state_if_necessary(); });
+    _driver_context.set_timeout_handler([this]() {
+        iterate_drivers([](const DriverPtr& driver) {
+            driver->set_need_check_reschedule(true);
+            if (driver->is_in_blocked()) {
+                LOG_IF(WARNING, config::pipeline_timeout_diagnostic)
+                        << "[Driver] Timeout " << driver->to_readable_string();
+                driver->observer()->cancel_trigger();
+            }
+        });
+    });
+}
 
 FragmentContext::~FragmentContext() {
     _close_stream_load_contexts();
     _data_sink.reset();
-    _runtime_filter_hub.close_all_in_filters(_runtime_state.get());
+    _driver_context.close_runtime_filters();
     close_all_execution_groups();
     if (_plan != nullptr) {
         _plan->close(_runtime_state.get());
@@ -152,7 +168,7 @@ void FragmentContext::count_down_execution_group(size_t val) {
 
     finish();
     auto status = final_status();
-    _workgroup->executors()->driver_executor()->report_exec_state(query_ctx, this, status, true);
+    workgroup()->executors()->driver_executor()->report_exec_state(query_ctx, this, status, true);
 
     if (_report_when_finish) {
         /// TODO: report fragment finish to BE coordinator
@@ -242,7 +258,7 @@ void FragmentContext::report_exec_state_if_necessary() {
                 driver->runtime_report_action();
             }
         });
-        _workgroup->executors()->driver_executor()->report_exec_state(query_ctx, this, Status::OK(), false);
+        workgroup()->executors()->driver_executor()->report_exec_state(query_ctx, this, Status::OK(), false);
     }
 }
 
@@ -264,9 +280,9 @@ void FragmentContext::set_final_status(const Status& status) {
 
         const bool finished_cancel = detailed_message == "QueryFinished" || detailed_message == "LimitReach";
         if (!_s_status.ok() && !finished_cancel) {
-            const auto* executors = _workgroup != nullptr
-                                            ? _workgroup->executors()
-                                            : ExecEnv::GetInstance()->workgroup_manager()->shared_executors();
+            const auto& wg = workgroup();
+            const auto* executors =
+                    wg != nullptr ? wg->executors() : ExecEnv::GetInstance()->workgroup_manager()->shared_executors();
             auto* executor = executors->driver_executor();
             auto* query_ctx = _runtime_state->query_ctx();
             if (query_ctx != nullptr) {
@@ -285,10 +301,10 @@ void FragmentContext::set_final_status(const Status& status) {
                 LOG(WARNING) << cancel_msg;
             }
 
+            const auto& wg = workgroup();
             const auto* executors =
-                    _workgroup != nullptr
-                            ? _workgroup->executors()
-                            : execution_services(_runtime_state.get()).workgroup_manager->shared_executors();
+                    wg != nullptr ? wg->executors()
+                                  : execution_services(_runtime_state.get()).workgroup_manager->shared_executors();
             auto* executor = executors->driver_executor();
             iterate_drivers([executor](const DriverPtr& driver) { executor->cancel(driver.get()); });
         }
@@ -365,29 +381,11 @@ void FragmentContext::destroy_pass_through_chunk_buffer() {
 }
 
 Status FragmentContext::set_pipeline_timer(PipelineTimer* timer) {
-    _pipeline_timer = timer;
-    _timeout_task = std::make_shared<CheckFragmentTimeout>(this);
-    timespec tm = butil::seconds_from_now(runtime_state()->query_ctx()->get_query_expire_seconds());
-    RETURN_IF_ERROR(_pipeline_timer->schedule(_timeout_task.get(), tm));
-    return Status::OK();
+    return _driver_context.set_pipeline_timer(timer);
 }
 
 void FragmentContext::clear_pipeline_timer() {
-    if (_pipeline_timer) {
-        if (!_rf_timeout_tasks.empty()) {
-            for (auto& [ignore, task] : _rf_timeout_tasks) {
-                if (task) {
-                    task->unschedule_and_join(_pipeline_timer);
-                    task.reset();
-                }
-            }
-            _rf_timeout_tasks.clear();
-        }
-        if (_timeout_task) {
-            _timeout_task->unschedule_and_join(_pipeline_timer);
-            _timeout_task.reset();
-        }
-    }
+    _driver_context.clear_pipeline_timer();
 }
 
 TQueryType::type FragmentContext::query_type() const {
@@ -516,35 +514,6 @@ void FragmentContext::_close_stream_load_contexts() {
             runtime_services(_runtime_state.get()).stream_context_mgr->remove_channel_context(context);
         }
     }
-}
-
-void FragmentContext::init_event_scheduler() {
-    _event_scheduler = std::make_unique<EventScheduler>();
-    runtime_state()->runtime_profile()->add_info_string("EnableEventScheduler",
-                                                        enable_event_scheduler() ? "true" : "false");
-}
-
-void FragmentContext::add_timer_observer(PipelineObserver* observer, uint64_t timeout) {
-    RFScanWaitTimeout* task;
-    if (auto iter = _rf_timeout_tasks.find(timeout); iter != _rf_timeout_tasks.end()) {
-        task = down_cast<RFScanWaitTimeout*>(iter->second.get());
-    } else {
-        auto timeoutTask = std::make_shared<RFScanWaitTimeout>();
-        task = timeoutTask.get();
-        _rf_timeout_tasks.emplace(timeout, timeoutTask);
-    }
-    task->add_observer(_runtime_state.get(), observer);
-}
-
-Status FragmentContext::submit_all_timer() {
-    timespec tm = butil::microseconds_to_timespec(butil::gettimeofday_us());
-    for (const auto& [delta_ns, task] : _rf_timeout_tasks) {
-        timespec abstime = tm;
-        abstime.tv_nsec += delta_ns;
-        butil::timespec_normalize(&abstime);
-        RETURN_IF_ERROR(_pipeline_timer->schedule(task.get(), abstime));
-    }
-    return Status::OK();
 }
 
 } // namespace starrocks::pipeline

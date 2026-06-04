@@ -19,6 +19,7 @@
 #include "common/logging.h"
 #include "common/thread/priority_thread_pool.hpp"
 #include "exec/pipeline/fragment_context.h"
+#include "exec/pipeline/fragment_driver_context.h"
 #include "exec/pipeline/pipeline.h"
 #include "exec/pipeline/pipeline_driver.h"
 #include "exec/pipeline/pipeline_fwd.h"
@@ -93,7 +94,7 @@ void ExecutionGroup::prepare_active_drivers_parallel(RuntimeState* state,
 
     for_each_active_driver(_pipelines, [&](const DriverPtr& driver) {
         // since prepare is async, we must hold the runtime state ptr
-        auto runtime_state_holder = driver->fragment_ctx()->runtime_state_ptr();
+        auto runtime_state_holder = driver->driver_context()->runtime_state_ptr();
         bool submitted = pipeline_prepare_pool->try_offer(
                 [sync_ctx, &driver, runtime_state_holder = std::move(runtime_state_holder)]() {
                     auto runtime_state = runtime_state_holder.get();

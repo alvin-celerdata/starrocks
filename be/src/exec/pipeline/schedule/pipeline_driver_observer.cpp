@@ -14,7 +14,7 @@
 
 #include "exec/pipeline/schedule/pipeline_driver_observer.h"
 
-#include "exec/pipeline/fragment_context.h"
+#include "exec/pipeline/fragment_driver_context.h"
 #include "exec/pipeline/pipeline_driver.h"
 #include "exec/pipeline/primitives/driver_state.h"
 #include "exec/pipeline/schedule/common.h"
@@ -27,21 +27,21 @@ static void on_update(PipelineDriver* driver) {
     auto sink = driver->sink_operator();
     auto source = driver->source_operator();
     if (sink->is_finished() || sink->need_input() || source->is_finished() || source->has_output()) {
-        driver->fragment_ctx()->event_scheduler()->try_schedule(driver);
+        driver->driver_context()->event_scheduler()->try_schedule(driver);
     }
 }
 
 static void on_sink_update(PipelineDriver* driver) {
     auto sink = driver->sink_operator();
     if (sink->is_finished() || sink->need_input()) {
-        driver->fragment_ctx()->event_scheduler()->try_schedule(driver);
+        driver->driver_context()->event_scheduler()->try_schedule(driver);
     }
 }
 
 static void on_source_update(PipelineDriver* driver) {
     auto source = driver->source_operator();
     if (source->is_finished() || source->has_output()) {
-        driver->fragment_ctx()->event_scheduler()->try_schedule(driver);
+        driver->driver_context()->event_scheduler()->try_schedule(driver);
     }
 }
 
@@ -78,7 +78,7 @@ void PipelineDriverObserver::_do_update(int event) {
         bool pipeline_block = driver->driver_state() != DriverState::INPUT_EMPTY &&
                               driver->driver_state() != DriverState::OUTPUT_FULL;
         if (pipeline_block || _is_cancel_changed(event)) {
-            driver->fragment_ctx()->event_scheduler()->try_schedule(driver);
+            driver->driver_context()->event_scheduler()->try_schedule(driver);
         } else if (_is_all_changed(event)) {
             on_update(driver);
         } else if (_is_source_changed(event)) {

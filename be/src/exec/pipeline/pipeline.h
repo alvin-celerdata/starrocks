@@ -46,7 +46,7 @@ public:
         }
         return operators;
     }
-    void instantiate_drivers(RuntimeState* state);
+    void instantiate_drivers(RuntimeState* state, FragmentDriverContext* driver_ctx);
     Drivers& drivers();
     const Drivers& drivers() const;
     void on_driver_finished(RuntimeState* state) override;

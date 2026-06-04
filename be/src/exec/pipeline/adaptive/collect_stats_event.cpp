@@ -63,7 +63,7 @@ void CollectStatsSourceInitializeEvent::process(RuntimeState* state) {
 
     for (auto* pipeline : _pipelines) {
         pipeline->source_operator_factory()->adjust_dop();
-        pipeline->instantiate_drivers(state);
+        pipeline->instantiate_drivers(state, state->fragment_ctx()->driver_context());
     }
 
     auto prepare_drivers = [state, &pipelines = _pipelines]() {

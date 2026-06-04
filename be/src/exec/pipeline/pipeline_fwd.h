@@ -25,6 +25,7 @@ using QueryContextPtr = std::shared_ptr<QueryContext>;
 class QueryContextManager;
 class FragmentContext;
 using FragmentContextPtr = std::shared_ptr<FragmentContext>;
+class FragmentDriverContext;
 class FragmentContextManager;
 using FragmentContextManagerPtr = std::unique_ptr<FragmentContextManager>;
 class FragmentExecutor;

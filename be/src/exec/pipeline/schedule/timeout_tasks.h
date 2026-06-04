@@ -19,16 +19,16 @@
 #include "runtime/descriptors.h"
 
 namespace starrocks::pipeline {
-class FragmentContext;
+class FragmentDriverContext;
 
 // TimerTask object, fragment->cancel is called if the timeout is reached.
 class CheckFragmentTimeout final : public PipelineTimerTask {
 public:
-    CheckFragmentTimeout(FragmentContext* fragment_ctx) : _fragment_ctx(fragment_ctx) {}
+    CheckFragmentTimeout(FragmentDriverContext* driver_ctx) : _driver_ctx(driver_ctx) {}
     void Run() override;
 
 private:
-    FragmentContext* _fragment_ctx;
+    FragmentDriverContext* _driver_ctx;
 };
 
 // If the timeout is reached, a cancel_update event is sent to all objects observing _timeout.

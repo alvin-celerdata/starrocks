@@ -26,6 +26,7 @@
 #include "exec/pipeline/audit_statistics_reporter.h"
 #include "exec/pipeline/exec_state_reporter.h"
 #include "exec/pipeline/fragment_context.h"
+#include "exec/pipeline/fragment_driver_context.h"
 #include "exec/pipeline/pipeline_driver.h"
 #include "exec/pipeline/pipeline_driver_poller.h"
 #include "exec/pipeline/pipeline_driver_queue.h"
@@ -121,8 +122,8 @@ void GlobalDriverExecutor::_worker_thread() {
             continue;
         }
 
-        auto* fragment_ctx = driver->fragment_ctx();
-        auto* runtime_state = fragment_ctx->runtime_state();
+        auto* driver_ctx = driver->driver_context();
+        auto* runtime_state = driver_ctx->runtime_state();
         auto* query_ctx = driver->query_ctx();
 
         DCHECK(!driver->is_in_ready());
@@ -131,25 +132,25 @@ void GlobalDriverExecutor::_worker_thread() {
         if (current_thread != nullptr) {
             current_thread->set_idle(false);
         }
-        const TQueryType::type query_type = fragment_ctx->query_type();
+        const TQueryType::type query_type = runtime_state->query_options().query_type;
 
         driver->increment_schedule_times();
         _metrics->driver_schedule_count.increment(1);
 
-        SCOPED_SET_TRACE_INFO(driver->driver_id(), query_ctx->query_id(), fragment_ctx->fragment_instance_id());
+        SCOPED_SET_TRACE_INFO(driver->driver_id(), query_ctx->query_id(), driver_ctx->fragment_instance_id());
         DUMP_TRACE_IF_TIMEOUT(config::pipeline_process_timeout_guard_ms);
-        SET_THREAD_LOCAL_QUERY_TRACE_CONTEXT(query_ctx->query_trace(), fragment_ctx->fragment_instance_id(), driver);
+        SET_THREAD_LOCAL_QUERY_TRACE_CONTEXT(query_ctx->query_trace(), driver_ctx->fragment_instance_id(), driver);
 
         // TODO(trueeyu): This writing is to ensure that MemTracker will not be destructed before the thread ends.
         //  This writing method is a bit tricky, and when there is a better way, replace it
         // do not remove this writing, it is used to ensure that MemTracker will not be destructed before the SCOPED_THREAD_LOCAL_MEM_TRACKER_SETTER
-        auto runtime_state_holder = fragment_ctx->runtime_state_ptr();
+        auto runtime_state_holder = driver_ctx->runtime_state_ptr();
         {
             SCOPED_THREAD_LOCAL_MEM_TRACKER_SETTER(runtime_state->instance_mem_tracker());
 #if !defined(ADDRESS_SANITIZER) && !defined(LEAK_SANITIZER) && !defined(THREAD_SANITIZER)
             FAIL_POINT_SCOPE(mem_alloc_error);
 #endif
-            if (fragment_ctx->is_canceled()) {
+            if (driver_ctx->is_canceled()) {
                 driver->cancel_operators(runtime_state);
                 if (driver->is_still_pending_finish()) {
                     driver->set_driver_state(DriverState::PENDING_FINISH);
@@ -208,7 +209,7 @@ void GlobalDriverExecutor::_worker_thread() {
                 status = status.clone_and_append(fmt::format("BE:{}", be_id));
                 LOG_IF(WARNING, !status.is_suppressed())
                         << "[Driver] Process error, query_id=" << print_id(driver->query_ctx()->query_id())
-                        << ", instance_id=" << print_id(driver->fragment_ctx()->fragment_instance_id())
+                        << ", instance_id=" << print_id(driver->driver_context()->fragment_instance_id())
                         << ", status=" << status;
                 driver->runtime_profile()->add_info_string("ErrorMsg", std::string(status.message()));
                 query_ctx->cancel(status, false);
@@ -287,8 +288,8 @@ StatusOr<DriverRawPtr> GlobalDriverExecutor::_get_next_driver(std::queue<DriverR
 
 void GlobalDriverExecutor::submit(DriverRawPtr driver) {
     driver->start_timers();
-    if (driver->fragment_ctx()->enable_event_scheduler()) {
-        driver->fragment_ctx()->event_scheduler()->attach_queue(_driver_queue.get());
+    if (driver->driver_context()->enable_event_scheduler()) {
+        driver->driver_context()->event_scheduler()->attach_queue(_driver_queue.get());
     }
 
     if (driver->is_precondition_block()) {

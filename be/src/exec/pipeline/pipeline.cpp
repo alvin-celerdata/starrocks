@@ -16,7 +16,7 @@
 
 #include "compute_env/workgroup/pipeline_executor_set.h"
 #include "compute_env/workgroup/work_group.h"
-#include "exec/pipeline/fragment_context.h"
+#include "exec/pipeline/fragment_driver_context.h"
 #include "exec/pipeline/group_execution/execution_group.h"
 #include "exec/pipeline/operator.h"
 #include "exec/pipeline/pipeline_driver.h"
@@ -63,22 +63,21 @@ const Drivers& Pipeline::drivers() const {
     return _drivers;
 }
 
-void Pipeline::instantiate_drivers(RuntimeState* state) {
+void Pipeline::instantiate_drivers(RuntimeState* state, FragmentDriverContext* driver_ctx) {
     auto* query_ctx = state->query_ctx();
-    auto* fragment_ctx = state->fragment_ctx();
-    auto workgroup = fragment_ctx->workgroup();
+    auto workgroup = driver_ctx->workgroup();
 
     size_t dop = degree_of_parallelism();
 
     VLOG_ROW << "Pipeline " << to_readable_string() << " parallel=" << dop
-             << " fragment_instance_id=" << print_id(fragment_ctx->fragment_instance_id());
+             << " fragment_instance_id=" << print_id(driver_ctx->fragment_instance_id());
 
     setup_pipeline_profile(state);
     _drivers.reserve(dop);
     for (size_t i = 0; i < dop; ++i) {
         auto&& operators = create_operators(dop, i);
-        DriverPtr driver = std::make_shared<PipelineDriver>(std::move(operators), query_ctx, fragment_ctx, this, this,
-                                                            fragment_ctx->next_driver_id());
+        DriverPtr driver = std::make_shared<PipelineDriver>(std::move(operators), query_ctx, driver_ctx, this, this,
+                                                            driver_ctx->next_driver_id());
 
         if (state->enable_event_scheduler()) {
             driver->assign_observer();
@@ -89,7 +88,7 @@ void Pipeline::instantiate_drivers(RuntimeState* state) {
         _drivers.emplace_back(std::move(driver));
     }
 
-    query_ctx->query_trace()->register_drivers(fragment_ctx->fragment_instance_id(), _drivers);
+    query_ctx->query_trace()->register_drivers(driver_ctx->fragment_instance_id(), _drivers);
 
     if (!source_operator_factory()->with_morsels()) {
         return;
