@@ -16,21 +16,35 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "column/global_dict/config.h"
+#include "common/object_pool.h"
+#include "compute_env/query/runtime_range_pruner.h"
 #include "exec/runtime_filter/runtime_filter_probe.h"
+#include "runtime/descriptors.h"
 #include "runtime/runtime_in_filter.h"
-#include "storage/column_predicate_factory.h"
 #include "storage/primitive/column_and_predicate.h"
 #include "storage/primitive/column_or_predicate.h"
 #include "storage/primitive/column_value_range.h"
 #include "storage/primitive/filter_condition.h"
 #include "storage/primitive/predicate_parser.h"
-#include "storage/runtime_range_pruner.h"
 
 namespace starrocks {
 namespace detail {
+inline StatusOr<ColumnPredicate*> build_null_predicate(PredicateParser* parser, const SlotDescriptor* slot,
+                                                       ObjectPool* pool) {
+    GeneralCondition condition;
+    condition.set_column_name(std::string(slot->col_name()));
+    condition.set_condition_op("IS");
+    condition.set_is_index_filter_only(false);
+    condition.set_is_null(true);
+
+    ASSIGN_OR_RETURN(auto* pred, parser->parse_thrift_cond(condition));
+    return pool->add(pred);
+}
+
 struct RuntimeColumnPredicateBuilder {
     template <LogicalType ltype>
     StatusOr<std::vector<const ColumnPredicate*>> operator()(const ColumnIdToGlobalDictMap* global_dictmaps,
@@ -104,9 +118,7 @@ struct RuntimeColumnPredicateBuilder {
             if (range.is_empty_value_range()) {
                 if (rf->has_null()) {
                     std::vector<const ColumnPredicate*> new_preds;
-                    TypeInfoPtr type = get_type_info(limit_type, slot->type().precision, slot->type().scale);
-                    auto column_id = parser->column_id(*slot);
-                    ColumnPredicate* null_pred = pool->add(new_column_null_predicate(type, column_id, true));
+                    ASSIGN_OR_RETURN(auto* null_pred, build_null_predicate(parser, slot, pool));
                     new_preds.emplace_back(null_pred);
                     return new_preds;
                 } else {
@@ -130,7 +142,7 @@ struct RuntimeColumnPredicateBuilder {
                 ColumnAndPredicate* and_pred = pool->add(new ColumnAndPredicate(type, column_id));
                 and_pred->add_child(preds.begin(), preds.end());
 
-                ColumnPredicate* null_pred = pool->add(new_column_null_predicate(type, column_id, true));
+                ASSIGN_OR_RETURN(auto* null_pred, build_null_predicate(parser, slot, pool));
 
                 ColumnOrPredicate* or_pred = pool->add(new ColumnOrPredicate(type, column_id));
                 or_pred->add_child(and_pred);

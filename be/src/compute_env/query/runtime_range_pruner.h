@@ -20,11 +20,13 @@
 
 #include "column/global_dict/types_fwd_decl.h"
 #include "common/status.h"
+#include "common/statusor.h"
 #include "storage/primitive/range.h"
 
 namespace starrocks {
 class SlotDescriptor;
 
+class ObjectPool;
 class RuntimeFilterProbeDescriptor;
 class PredicateParser;
 class ColumnPredicate;

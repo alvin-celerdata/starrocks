@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include "compute_env/query/runtime_range_pruner.hpp"
 #include "exec/runtime_filter/runtime_filter_probe.h"
 #include "gen_cpp/RuntimeFilter_types.h"
 #include "runtime/descriptors.h"
@@ -21,7 +22,6 @@
 #include "runtime/runtime_state.h"
 #include "storage/column_predicate_factory.h"
 #include "storage/predicate_parser.h"
-#include "storage/runtime_range_pruner.hpp"
 #include "testutil/exprs_test_helper.h"
 #include "testutil/schema_test_helper.h"
 #include "types/logical_type.h"

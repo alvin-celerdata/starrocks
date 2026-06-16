@@ -72,6 +72,8 @@ set(COMPUTE_ENV_QUERY_CACHE_FILES
 set(COMPUTE_ENV_QUERY_FILES
     query/connector_scan_mem_share_arbitrator.cpp
     query/global_late_materialization_context.cpp
+    query/runtime_range_pruner.h
+    query/runtime_range_pruner.hpp
 )
 
 set(COMPUTE_ENV_GLOBAL_DICT_FILES
