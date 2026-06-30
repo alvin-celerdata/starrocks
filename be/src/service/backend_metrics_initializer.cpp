@@ -29,6 +29,7 @@
 #include "agent/agent_metrics.h"
 #include "base/compression/compression_context_pool_metrics.h"
 #include "base/network/network_util.h"
+#include "cache/cache_memory_tracker_updater.h"
 #include "cache/datacache_metrics.h"
 #include "common/config_metrics_fwd.h"
 #include "common/metrics/process_metrics_registry.h"
@@ -46,6 +47,8 @@
 #include "platform/http/http_metrics.h"
 #include "platform/key_cache.h"
 #include "platform/platform_metrics.h"
+#include "runtime/env/global_env.h"
+#include "runtime/memory/process_memory_metrics.h"
 #include "runtime/runtime_metrics.h"
 #include "service/service_metrics.h"
 #include "storage/index/vector/vector_index_cache_metrics.h"
@@ -59,7 +62,6 @@
 #include "exec/catalog_scan_metrics.h"
 #include "exec/query_scan_metrics.h"
 #include "storage/flat_json_metrics.h"
-#include "util/system_metrics.h"
 
 namespace starrocks {
 
@@ -272,7 +274,11 @@ void BackendMetricsInitializer::initialize(ProcessMetricsRegistry* process_metri
 
     if (options.init_system_metrics) {
         PlatformMetrics::instance()->install(registry, disk_devices, network_interfaces);
-        SystemMetrics::instance()->install(registry);
+        ProcessMemoryMetrics::instance()->install(registry, [] {
+            auto* global_env = GlobalEnv::GetInstance();
+            CacheMemoryTrackerUpdater::update(global_env->datacache_mem_tracker(),
+                                              global_env->page_cache_mem_tracker());
+        });
         IOProfilerMetrics::instance()->install(registry);
     }
 

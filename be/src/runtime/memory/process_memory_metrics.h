@@ -1,31 +1,39 @@
-// Licensed to the Apache Software Foundation (ASF) under one
-// or more contributor license agreements.  See the NOTICE file
-// distributed with this work for additional information
-// regarding copyright ownership.  The ASF licenses this file
-// to you under the Apache License, Version 2.0 (the
-// "License"); you may not use this file except in compliance
-// with the License.  You may obtain a copy of the License at
+// Copyright 2021-present StarRocks, Inc. All rights reserved.
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// Unless required by applicable law or agreed to in writing,
-// software distributed under the License is distributed on an
-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.  See the License for the
-// specific language governing permissions and limitations
-// under the License.
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #pragma once
 
-#include <memory>
+#include <functional>
 #include <mutex>
 
 #include "base/metrics.h"
 
 namespace starrocks {
 
-class MemoryMetrics {
+class ProcessMemoryMetrics {
 public:
+    using BeforeUpdateHook = std::function<void()>;
+
+    ProcessMemoryMetrics() = default;
+    explicit ProcessMemoryMetrics(MetricRegistry* registry) { install(registry); }
+    ~ProcessMemoryMetrics() = default;
+
+    static ProcessMemoryMetrics* instance();
+
+    void install(MetricRegistry* registry, BeforeUpdateHook before_update_hook = {});
+    void update();
+
     METRIC_DEFINE_INT_GAUGE(jemalloc_allocated_bytes, MetricUnit::BYTES);
     METRIC_DEFINE_INT_GAUGE(jemalloc_active_bytes, MetricUnit::BYTES);
     METRIC_DEFINE_INT_GAUGE(jemalloc_metadata_bytes, MetricUnit::BYTES);
@@ -34,7 +42,6 @@ public:
     METRIC_DEFINE_INT_GAUGE(jemalloc_mapped_bytes, MetricUnit::BYTES);
     METRIC_DEFINE_INT_GAUGE(jemalloc_retained_bytes, MetricUnit::BYTES);
 
-    // MemPool metrics
     METRIC_DEFINE_INT_GAUGE(process_mem_bytes, MetricUnit::BYTES);
     METRIC_DEFINE_INT_GAUGE(query_mem_bytes, MetricUnit::BYTES);
     METRIC_DEFINE_INT_GAUGE(connector_scan_pool_mem_bytes, MetricUnit::BYTES);
@@ -64,38 +71,15 @@ public:
     METRIC_DEFINE_INT_GAUGE(datacache_mem_bytes, MetricUnit::BYTES);
     METRIC_DEFINE_INT_GAUGE(replication_mem_bytes, MetricUnit::BYTES);
     METRIC_DEFINE_INT_GAUGE(vector_index_mem_bytes, MetricUnit::BYTES);
-};
-
-class SystemMetrics {
-public:
-    SystemMetrics();
-    ~SystemMetrics();
-
-    static SystemMetrics* instance();
-
-    // install higher-level system metrics to registry
-    void install(MetricRegistry* registry);
-
-    // update metrics
-    void update();
-
-    const MemoryMetrics* memory_metrics() const { return _memory_metrics.get(); }
-
-    void update_memory_metrics();
 
 private:
-    void _install_memory_metrics(MetricRegistry* registry);
+    void _register_metrics(MetricRegistry* registry);
 
-    void _update_datacache_mem_tracker();
-    void _update_pagecache_mem_tracker();
-
-private:
     static const char* const _s_hook_name;
-
-    std::unique_ptr<MemoryMetrics> _memory_metrics;
 
     std::mutex _update_mutex;
     MetricRegistry* _registry = nullptr;
+    BeforeUpdateHook _before_update_hook;
 };
 
 } // namespace starrocks

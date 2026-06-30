@@ -18,7 +18,9 @@
 
 #include <mutex>
 
+#include "cache/cache_memory_tracker_updater.h"
 #include "common/metrics/process_metrics_registry.h"
+#include "runtime/mem_tracker.h"
 
 #ifdef WITH_STARCACHE
 #include "cache/datacache.h"
@@ -60,6 +62,15 @@ TEST_F(DataCacheMetricsTest, test_enable_update_hook_basic) {
     // This should not crash regardless of WITH_STARCACHE
     ASSERT_NO_THROW(DataCacheMetrics::instance()->enable_update_hook(false));
     ASSERT_NO_THROW(DataCacheMetrics::instance()->enable_update_hook(true));
+}
+
+TEST_F(DataCacheMetricsTest, test_memory_tracker_updater_basic) {
+    MemTracker datacache_mem_tracker(-1, "datacache");
+    MemTracker page_cache_mem_tracker(-1, "page_cache");
+
+    ASSERT_NO_THROW(CacheMemoryTrackerUpdater::update(&datacache_mem_tracker, &page_cache_mem_tracker));
+    ASSERT_GE(datacache_mem_tracker.consumption(), 0);
+    ASSERT_GE(page_cache_mem_tracker.consumption(), 0);
 }
 
 #ifdef WITH_STARCACHE
