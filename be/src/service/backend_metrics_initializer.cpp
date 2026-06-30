@@ -36,7 +36,9 @@
 #include "common/system/backend_options.h"
 #include "common/system/disk_info.h"
 #include "compute_env/load/stream_load_metrics.h"
+#include "compute_env/query_cache/query_cache_metrics.h"
 #include "compute_env/staros/staros_worker_metrics.h"
+#include "exec/exec_env.h"
 #include "exec/pipeline/primitives/pipeline_metrics.h"
 #include "fs/fs.h"
 #include "fs/fs_util.h"
@@ -46,6 +48,7 @@
 #include "platform/platform_metrics.h"
 #include "runtime/runtime_metrics.h"
 #include "service/service_metrics.h"
+#include "storage/index/vector/vector_index_cache_metrics.h"
 #include "storage/storage_metrics.h"
 #ifndef __APPLE__
 #include "util/jvm_metrics.h"
@@ -253,6 +256,7 @@ void BackendMetricsInitializer::initialize(ProcessMetricsRegistry* process_metri
     auto* runtime_metrics = RuntimeMetrics::instance();
     runtime_metrics->install(registry);
     StreamLoadMetrics::instance()->install(registry);
+    query_cache::QueryCacheMetrics::instance()->install(registry, [] { return ExecEnv::GetInstance()->cache_mgr(); });
     registry->register_hook(kRuntimeMetricsHookName, [runtime_metrics] { update_runtime_metrics(runtime_metrics); });
     QueryScanMetrics::instance()->install(registry);
     FlatJsonMetrics::instance()->install(registry);
@@ -277,6 +281,7 @@ void BackendMetricsInitializer::initialize(ProcessMetricsRegistry* process_metri
     SpillMetrics::instance()->install(registry);
     DataCacheMetrics::instance()->install(registry);
     StorageMetrics::instance()->install(registry);
+    VectorIndexCacheMetrics::instance()->install(registry);
     KeyCache::instance().install_metrics(registry);
 
 #ifndef __APPLE__

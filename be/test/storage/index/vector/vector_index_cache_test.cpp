@@ -16,6 +16,29 @@
 
 #include <gtest/gtest.h>
 
+#include "storage/index/vector/vector_index_cache_metrics.h"
+
+namespace starrocks {
+
+TEST(VectorIndexCacheMetricsTest, NullProviderIsSafe) {
+    MetricRegistry registry("test_registry");
+    VectorIndexCacheMetrics metrics(&registry, [] { return nullptr; });
+
+    registry.trigger_hook();
+
+    EXPECT_EQ(0, metrics.vector_index_cache_capacity.value());
+    EXPECT_EQ(0, metrics.vector_index_cache_usage.value());
+    EXPECT_DOUBLE_EQ(0.0, metrics.vector_index_cache_usage_ratio.value());
+    EXPECT_EQ(0, metrics.vector_index_cache_lookup_count.value());
+    EXPECT_EQ(0, metrics.vector_index_cache_hit_count.value());
+    EXPECT_DOUBLE_EQ(0.0, metrics.vector_index_cache_hit_ratio.value());
+    EXPECT_EQ(0, metrics.vector_index_cache_dynamic_lookup_count.value());
+    EXPECT_EQ(0, metrics.vector_index_cache_dynamic_hit_count.value());
+    EXPECT_DOUBLE_EQ(0.0, metrics.vector_index_cache_dynamic_hit_ratio.value());
+}
+
+} // namespace starrocks
+
 #ifdef WITH_TENANN
 
 #include <atomic>
@@ -176,6 +199,45 @@ TEST_F(VectorIndexCacheTest, LookupAndHitCounters_TrackedAcrossPaths) {
     EXPECT_FALSE(cache_->Lookup(tenann::CacheKey("/missing.vi"), &h));
     EXPECT_EQ(2u, cache_->lookup_count());
     EXPECT_EQ(1u, cache_->hit_count());
+}
+
+TEST_F(VectorIndexCacheTest, MetricsRegisterAndUpdateFromProvider) {
+    MetricRegistry registry("test_registry");
+    VectorIndexCacheMetrics metrics(&registry, [&] { return cache_.get(); });
+
+    ASSERT_NE(nullptr, registry.get_metric("vector_index_cache_capacity"));
+    ASSERT_NE(nullptr, registry.get_metric("vector_index_cache_usage"));
+    ASSERT_NE(nullptr, registry.get_metric("vector_index_cache_usage_ratio"));
+    ASSERT_NE(nullptr, registry.get_metric("vector_index_cache_lookup_count"));
+    ASSERT_NE(nullptr, registry.get_metric("vector_index_cache_hit_count"));
+    ASSERT_NE(nullptr, registry.get_metric("vector_index_cache_hit_ratio"));
+    ASSERT_NE(nullptr, registry.get_metric("vector_index_cache_dynamic_lookup_count"));
+    ASSERT_NE(nullptr, registry.get_metric("vector_index_cache_dynamic_hit_count"));
+    ASSERT_NE(nullptr, registry.get_metric("vector_index_cache_dynamic_hit_ratio"));
+
+    auto loader = [&]() -> tenann::IndexRef { return make_dummy_ref(2048); };
+    tenann::IndexCacheHandle h1;
+    tenann::IndexCacheHandle h2;
+    EXPECT_TRUE(cache_->GetOrCreate(tenann::CacheKey("/metrics.vi"), loader, &h1));
+    EXPECT_TRUE(cache_->GetOrCreate(tenann::CacheKey("/metrics.vi"), loader, &h2));
+
+    registry.trigger_hook();
+
+    EXPECT_EQ(static_cast<int64_t>(cache_->capacity()), metrics.vector_index_cache_capacity.value());
+    EXPECT_EQ(static_cast<int64_t>(cache_->memory_usage()), metrics.vector_index_cache_usage.value());
+    EXPECT_GT(metrics.vector_index_cache_usage_ratio.value(), 0.0);
+    EXPECT_EQ(2, metrics.vector_index_cache_lookup_count.value());
+    EXPECT_EQ(1, metrics.vector_index_cache_hit_count.value());
+    EXPECT_DOUBLE_EQ(0.5, metrics.vector_index_cache_hit_ratio.value());
+    EXPECT_EQ(2, metrics.vector_index_cache_dynamic_lookup_count.value());
+    EXPECT_EQ(1, metrics.vector_index_cache_dynamic_hit_count.value());
+    EXPECT_DOUBLE_EQ(0.5, metrics.vector_index_cache_dynamic_hit_ratio.value());
+
+    registry.trigger_hook();
+
+    EXPECT_EQ(0, metrics.vector_index_cache_dynamic_lookup_count.value());
+    EXPECT_EQ(0, metrics.vector_index_cache_dynamic_hit_count.value());
+    EXPECT_DOUBLE_EQ(0.0, metrics.vector_index_cache_dynamic_hit_ratio.value());
 }
 
 TEST_F(VectorIndexCacheTest, GetOrCreate_ConcurrentCallers_SingleFlight) {

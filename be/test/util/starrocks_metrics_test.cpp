@@ -163,6 +163,10 @@ TEST_F(BackendMetricsTest, Normal) {
     auto storage_metrics = StorageMetrics::instance();
     auto metrics = backend_metrics_registry_for_test();
     metrics->collect(&visitor);
+
+    ASSERT_NE(nullptr, metrics->get_metric("query_cache_capacity"));
+    ASSERT_NE(nullptr, metrics->get_metric("vector_index_cache_capacity"));
+
     // check metric
     {
         runtime_metrics->fragment_requests_total.increment(12);
