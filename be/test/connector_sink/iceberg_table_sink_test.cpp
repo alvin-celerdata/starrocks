@@ -811,7 +811,6 @@ TEST_F(IcebergTableSinkTest, decompose_to_pipeline_row_delta_update_complex_type
 // then exercises IcebergRowDeltaSinkProvider::create_sink() on the
 // resulting context. Covers:
 //   - the row-delta dispatch branch in decompose_to_pipeline
-//   - IcebergConnector::create_sink_provider()
 //   - the bulk of create_row_delta_sink_context() (delete sub-context, data
 //     sub-context, override_tuple_desc, op_code_index, and the unpartitioned
 //     branch)

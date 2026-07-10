@@ -18,7 +18,8 @@
 
 #include "common/config_exec_fwd.h"
 #include "common/runtime_profile.h"
-#include "connector/connector_registry.h"
+#include "connector/iceberg/iceberg_chunk_sink.h"
+#include "connector/iceberg/iceberg_delete_sink.h"
 #include "connector/iceberg/iceberg_row_delta_sink.h"
 #include "connector/iceberg/iceberg_utils.h"
 #include "exec/pipeline/fragment_context.h"
@@ -247,10 +248,7 @@ Status IcebergTableSink::create_delete_sink_context(const TDataSink& thrift_sink
         delete_sink_ctx->partition_evaluators = ColumnExprEvaluator::from_exprs(partition_expr, runtime_state);
     }
 
-    auto connector = connector::ConnectorRegistry::default_instance()->get(connector::Connector::ICEBERG);
-    ASSIGN_OR_RETURN(auto provider, connector->create_sink_provider(
-                                            starrocks::connector::ConnectorSinkProviderType::DELETE, delete_sink_ctx));
-    sink_provider = std::move(provider);
+    sink_provider = std::make_unique<connector::IcebergDeleteSinkProvider>(std::move(delete_sink_ctx));
 
     return Status::OK();
 }
@@ -325,10 +323,7 @@ Status IcebergTableSink::create_data_sink_context(const TDataSink& thrift_sink, 
         }
     }
 
-    auto connector = connector::ConnectorRegistry::default_instance()->get(connector::Connector::ICEBERG);
-    ASSIGN_OR_RETURN(auto provider, connector->create_sink_provider(
-                                            starrocks::connector::ConnectorSinkProviderType::DATA, data_sink_ctx));
-    sink_provider = std::move(provider);
+    sink_provider = std::make_unique<connector::IcebergChunkSinkProvider>(data_sink_ctx);
 
     if (iceberg_table_desc->is_unpartitioned_table()) {
         //do nothing
@@ -592,10 +587,7 @@ Status IcebergTableSink::create_row_delta_sink_context(const TDataSink& thrift_s
     row_delta_ctx->data_sink_ctx = data_sink_ctx;
     row_delta_ctx->op_code_index = op_code_index;
 
-    auto connector = connector::ConnectorRegistry::default_instance()->get(connector::Connector::ICEBERG);
-    ASSIGN_OR_RETURN(auto provider, connector->create_sink_provider(
-                                            starrocks::connector::ConnectorSinkProviderType::ROW_DELTA, row_delta_ctx));
-    sink_provider = std::move(provider);
+    sink_provider = std::make_unique<connector::IcebergRowDeltaSinkProvider>(std::move(row_delta_ctx));
 
     return Status::OK();
 }
